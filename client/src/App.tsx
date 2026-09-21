@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   analyzeScene,
   serializeScene,
@@ -6,6 +6,11 @@ import {
   type Analysis,
   type Scene,
 } from '../../shared/geometry';
+import {
+  findUnblockPositions,
+  type UnblockCandidate,
+  type UnblockSearchResult,
+} from '../../shared/unblock';
 import { PRESETS, defaultScene } from './presets';
 import { Stage, CONDUCTOR_ID } from './Stage';
 import { Sidebar } from './Sidebar';
@@ -13,6 +18,13 @@ import { Sidebar } from './Sidebar';
 interface Notice {
   kind: 'info' | 'error' | 'success';
   text: string;
+}
+
+/** 解遮挡面板的预览状态：某演唱者的候选新位置 */
+interface UnblockPreview {
+  singerId: string;
+  x: number;
+  y: number;
 }
 
 function nextSingerIndex(scene: Scene): number {
@@ -29,9 +41,20 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [checking, setChecking] = useState(false);
+  // 自动解遮挡：搜索结果与预览位置（均绑定具体演唱者，场景/选中变化即作废）
+  const [unblock, setUnblock] = useState<{ singerId: string; result: UnblockSearchResult } | null>(
+    null,
+  );
+  const [preview, setPreview] = useState<UnblockPreview | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const analysis: Analysis = useMemo(() => analyzeScene(scene), [scene]);
+
+  // 场景或选中对象变化后，旧的搜索结果与预览不再可信，立即作废
+  useEffect(() => {
+    setUnblock(null);
+    setPreview(null);
+  }, [scene, selectedId]);
 
   // ---- 场景编辑 ----
   const updateSingers = (fn: (s: Scene['singers']) => Scene['singers']) =>
@@ -84,6 +107,38 @@ export default function App() {
     setScene(preset.build());
     setSelectedId(null);
     setNotice({ kind: 'info', text: `已载入预设：${preset.label}` });
+  };
+
+  // ---- 自动解遮挡 ----
+  const runUnblockSearch = () => {
+    const singer = scene.singers.find((s) => s.id === selectedId);
+    if (!singer) return;
+    const result = findUnblockPositions(scene, singer.id);
+    if (!result) return;
+    setUnblock({ singerId: singer.id, result });
+    setPreview(null);
+    if (result.candidates.length === 0) {
+      setNotice({
+        kind: 'error',
+        text: `未找到 ${singer.name} 的可行解遮挡位置，请调整场景后重试。`,
+      });
+    }
+  };
+
+  const previewCandidate = (c: UnblockCandidate) => {
+    if (!unblock) return;
+    setPreview({ singerId: unblock.singerId, x: c.x, y: c.y });
+  };
+
+  const applyPreview = () => {
+    if (!preview) return;
+    const singer = scene.singers.find((s) => s.id === preview.singerId);
+    // 只移动被选中的演唱者；场景更新后 analysis 自动重算，遮挡统计实时刷新
+    moveSinger(preview.singerId, preview.x, preview.y);
+    setNotice({
+      kind: 'success',
+      text: `已应用解遮挡位移：${singer?.name ?? preview.singerId} → (${preview.x.toFixed(2)}, ${preview.y.toFixed(2)})`,
+    });
   };
 
   // ---- 导出 / 导入 ----
@@ -199,6 +254,7 @@ export default function App() {
             scene={scene}
             analysis={analysis}
             selectedId={selectedId}
+            preview={preview}
             onSelect={setSelectedId}
             onMoveSinger={moveSinger}
             onMoveConductor={moveConductor}
@@ -213,10 +269,16 @@ export default function App() {
           scene={scene}
           analysis={analysis}
           selectedId={selectedId}
+          unblockResult={unblock && unblock.singerId === selectedId ? unblock.result : null}
+          unblockPreview={preview}
           onSelect={setSelectedId}
           onRadiusChange={changeRadius}
           onRename={rename}
           onRemove={removeSinger}
+          onUnblockSearch={runUnblockSearch}
+          onUnblockPreview={previewCandidate}
+          onUnblockCancelPreview={() => setPreview(null)}
+          onUnblockApply={applyPreview}
         />
       </main>
     </div>

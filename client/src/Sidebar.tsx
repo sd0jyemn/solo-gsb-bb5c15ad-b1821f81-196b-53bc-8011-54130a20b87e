@@ -1,15 +1,23 @@
 import type { Analysis, Scene, SingerLOS } from '../../shared/geometry';
+import type { UnblockCandidate, UnblockSearchResult } from '../../shared/unblock';
 import { identityColor } from './colors';
 import { CONDUCTOR_ID } from './Stage';
+import { UnblockPanel } from './UnblockPanel';
 
 interface SidebarProps {
   scene: Scene;
   analysis: Analysis;
   selectedId: string | null;
+  unblockResult: UnblockSearchResult | null;
+  unblockPreview: { singerId: string; x: number; y: number } | null;
   onSelect: (id: string | null) => void;
   onRadiusChange: (id: string, radius: number) => void;
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
+  onUnblockSearch: () => void;
+  onUnblockPreview: (c: UnblockCandidate) => void;
+  onUnblockCancelPreview: () => void;
+  onUnblockApply: () => void;
 }
 
 const STATUS_LABEL: Record<SingerLOS['status'], string> = {
@@ -101,6 +109,23 @@ export function Sidebar(props: SidebarProps) {
           <p className="hint">点击舞台上的站位圆或指挥进行选择；拖动可移动，滚轮可调整半径。</p>
         )}
       </section>
+
+      {selectedSinger && (
+        <UnblockPanel
+          scene={scene}
+          singer={selectedSinger}
+          result={props.unblockResult}
+          preview={
+            props.unblockPreview && props.unblockPreview.singerId === selectedSinger.id
+              ? props.unblockPreview
+              : null
+          }
+          onSearch={props.onUnblockSearch}
+          onPreview={props.onUnblockPreview}
+          onCancelPreview={props.onUnblockCancelPreview}
+          onApply={props.onUnblockApply}
+        />
+      )}
 
       <section className="panel">
         <h3>演唱者（{scene.singers.length}）</h3>

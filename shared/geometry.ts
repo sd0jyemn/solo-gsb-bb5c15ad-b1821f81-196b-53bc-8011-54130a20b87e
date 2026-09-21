@@ -39,7 +39,7 @@ export interface Scene {
 /** 相切判定容差（米）：|圆心距 - 半径| ≤ 该值视为相切 */
 export const TANGENT_EPS = 1e-6;
 /** 视线退化阈值：演唱者与指挥距离小于该值视为重合 */
-const DEGENERATE_EPS = 1e-9;
+export const DEGENERATE_EPS = 1e-9;
 /** 站位重合阈值：两圆心距离小于该值视为重合 */
 const COINCIDE_EPS = 1e-9;
 
@@ -88,9 +88,32 @@ export interface Analysis {
   summary: AnalysisSummary;
 }
 
+/**
+ * 点 p 到线段 a→b 的最短距离。
+ * 返回投影参数 t（钳制到 [0,1]）与距离；线段退化（a≈b）时 t=0。
+ */
+export function pointToSegment(p: Vec, a: Vec, b: Vec): { t: number; distance: number } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < DEGENERATE_EPS * DEGENERATE_EPS) {
+    return { t: 0, distance: Math.hypot(p.x - a.x, p.y - a.y) };
+  }
+  const tRaw = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  const t = tRaw < 0 ? 0 : tRaw > 1 ? 1 : tRaw;
+  return { t, distance: Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)) };
+}
+
+/**
+ * 线段 a→b 是否侵入圆（与 analyzeSinger 相同的容差语义）：
+ * 圆心到线段距离 < 半径 − TANGENT_EPS 视为侵入（遮挡）；相切不算侵入。
+ */
+export function segmentIntrudesCircle(a: Vec, b: Vec, center: Vec, radius: number): boolean {
+  return pointToSegment(center, a, b).distance < radius - TANGENT_EPS;
+}
+
 /** 分析单个演唱者到指挥的视线。 */
-export function analyzeSinger(conductor: Vec, singer: Singer, all: Singer[]): SingerLOS {
-  const p0x = singer.x;
+export function analyzeSinger(conductor: Vec, singer: Singer, all: Singer[]): SingerLOS {  const p0x = singer.x;
   const p0y = singer.y;
   const dx = conductor.x - p0x;
   const dy = conductor.y - p0y;

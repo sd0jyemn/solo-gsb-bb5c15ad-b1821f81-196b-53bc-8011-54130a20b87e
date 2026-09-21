@@ -15,7 +15,7 @@
     "build:client": "vite build client",
     "build:server": "esbuild server/src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --outfile=server/dist/index.js",
     "start": "node server/dist/index.js",
-    "test": "node --import tsx --test shared/geometry.test.ts",
+    "test": "node --import tsx --test shared/geometry.test.ts shared/unblock.test.ts",
     "typecheck": "tsc -p server/tsconfig.json && tsc -p client/tsconfig.json"
   },
   "devDependencies": {

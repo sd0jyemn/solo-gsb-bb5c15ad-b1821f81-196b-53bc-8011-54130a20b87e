@@ -472,6 +472,132 @@ button.danger:hover {
   line-height: 1.6;
 }
 
+/* ---- 自动解遮挡面板 ---- */
+button.primary {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.15);
+}
+
+.unblock > button {
+  width: 100%;
+  margin: 6px 0 2px;
+}
+
+.unblock-result {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unblock-result h4 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.unblock-note.ok {
+  margin: 0;
+  font-size: 12px;
+  color: var(--clear);
+}
+
+.unblock-empty {
+  font-size: 12px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid #7f2d2d;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.unblock-empty p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.candidate-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.candidate-list li {
+  background: #1d2536;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.candidate-list li.previewing {
+  border-color: var(--accent);
+  background: #22304f;
+}
+
+.candidate-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.candidate-info .badge {
+  margin-left: auto;
+}
+
+.candidate-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.candidate-actions button {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.unblock-stats {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ---- 舞台上的解遮挡预览 ---- */
+.unblock-preview {
+  pointer-events: none;
+}
+
+.preview-move {
+  stroke: var(--accent);
+  stroke-width: 0.05;
+  stroke-dasharray: 0.14 0.1;
+}
+
+.preview-arrow-head {
+  fill: var(--accent);
+}
+
+.preview-circle {
+  fill: rgba(79, 140, 255, 0.25);
+  stroke: var(--accent);
+  stroke-width: 0.05;
+  stroke-dasharray: 0.12 0.08;
+}
+
+.preview-label {
+  fill: #cfe1ff;
+}
+
 .swatch {
   display: inline-block;
   width: 12px;

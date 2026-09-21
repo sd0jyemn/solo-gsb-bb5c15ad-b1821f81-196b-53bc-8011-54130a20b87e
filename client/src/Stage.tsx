@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { Analysis, Scene, SingerLOS } from '../../shared/geometry';
+import { analyzeSinger, type Analysis, type Scene, type SingerLOS } from '../../shared/geometry';
 import { identityColor } from './colors';
 
 export const CONDUCTOR_ID = '__conductor__';
+
+/** 解遮挡预览：某演唱者的候选新位置 */
+interface PreviewPos {
+  singerId: string;
+  x: number;
+  y: number;
+}
 
 interface StageProps {
   scene: Scene;
   analysis: Analysis;
   selectedId: string | null;
+  preview?: PreviewPos | null;
   onSelect: (id: string | null) => void;
   onMoveSinger: (id: string, x: number, y: number) => void;
   onMoveConductor: (x: number, y: number) => void;
@@ -23,7 +31,7 @@ function statusOf(results: SingerLOS[], id: string): SingerLOS | undefined {
 }
 
 export function Stage(props: StageProps) {
-  const { scene, analysis, selectedId } = props;
+  const { scene, analysis, selectedId, preview } = props;
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
 
@@ -132,6 +140,19 @@ export function Stage(props: StageProps) {
 
   const conductor = scene.conductor;
 
+  // 解遮挡预览：候选位置的演唱者与视线状态（实时重算，确认前不修改场景）
+  const previewSinger = preview
+    ? scene.singers.find((s) => s.id === preview.singerId)
+    : undefined;
+  const previewLOS = useMemo(() => {
+    if (!preview || !previewSinger) return null;
+    return analyzeSinger(
+      conductor,
+      { ...previewSinger, x: preview.x, y: preview.y },
+      scene.singers,
+    );
+  }, [preview, previewSinger, conductor, scene.singers]);
+
   return (
     <svg
       ref={svgRef}
@@ -150,6 +171,19 @@ export function Stage(props: StageProps) {
       }}
     >
       {/* 舞台区域与网格 */}
+      <defs>
+        <marker
+          id="preview-arrow"
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M0,0 L10,5 L0,10 z" className="preview-arrow-head" />
+        </marker>
+      </defs>
       <rect x={vb.x} y={vb.y} width={vb.w} height={vb.h} className="stage-bg" />
       <rect x={0} y={0} width={W} height={D} className="stage-floor" />
       {gridLines}
@@ -234,6 +268,45 @@ export function Stage(props: StageProps) {
           </g>
         );
       })}
+
+      {/* 解遮挡预览：位移箭头 + 候选站位虚线圈 + 候选视线 */}
+      {preview && previewSinger && previewLOS && (
+        <g className="unblock-preview">
+          {Math.hypot(preview.x - previewSinger.x, preview.y - previewSinger.y) > 1e-9 && (
+            <line
+              x1={previewSinger.x}
+              y1={previewSinger.y}
+              x2={preview.x}
+              y2={preview.y}
+              className="preview-move"
+              markerEnd="url(#preview-arrow)"
+            />
+          )}
+          <line
+            x1={preview.x}
+            y1={preview.y}
+            x2={conductor.x}
+            y2={conductor.y}
+            className={`los ${
+              previewLOS.status === 'blocked'
+                ? 'los-blocked'
+                : previewLOS.status === 'tangent'
+                  ? 'los-tangent'
+                  : 'los-clear'
+            }`}
+          />
+          <circle cx={preview.x} cy={preview.y} r={previewSinger.radius} className="preview-circle" />
+          <text
+            x={preview.x}
+            y={preview.y}
+            textAnchor="middle"
+            dominantBaseline="central"
+            className="singer-label preview-label"
+          >
+            {previewSinger.name}
+          </text>
+        </g>
+      )}
     </svg>
   );
 }
