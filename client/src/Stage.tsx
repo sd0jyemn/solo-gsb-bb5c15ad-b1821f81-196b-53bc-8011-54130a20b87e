@@ -1,18 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { Analysis, Scene, SingerLOS } from '../../shared/geometry';
+import { analyzeSinger, type Analysis, type Scene, type SingerLOS, type UnblockCandidate } from '../../shared/geometry';
 import { identityColor } from './colors';
 
 export const CONDUCTOR_ID = '__conductor__';
+
+/** 自动解遮挡候选的舞台预览（仅渲染数据，不写入场景） */
+export interface StagePreview {
+  singerId: string;
+  x: number;
+  y: number;
+  candidates: UnblockCandidate[];
+  previewIndex: number;
+}
 
 interface StageProps {
   scene: Scene;
   analysis: Analysis;
   selectedId: string | null;
+  preview: StagePreview | null;
   onSelect: (id: string | null) => void;
   onMoveSinger: (id: string, x: number, y: number) => void;
   onMoveConductor: (x: number, y: number) => void;
   onAddSingerAt: (x: number, y: number) => void;
   onRadiusChange: (id: string, radius: number) => void;
+  /** 点击舞台上的候选标记：null 表示取消预览 */
+  onPreviewCandidate: (index: number | null) => void;
 }
 
 /** 舞台四周留白（米），y 负方向留给指挥活动区 */
@@ -132,6 +144,20 @@ export function Stage(props: StageProps) {
 
   const conductor = scene.conductor;
 
+  // 自动解遮挡：被预览的演唱者及其预览位置
+  const previewSinger = props.preview
+    ? scene.singers.find((s) => s.id === props.preview!.singerId)
+    : undefined;
+  const pv = props.preview && previewSinger ? props.preview : null;
+
+  // 预览位置的视线（基于“只移动该演唱者”的临时场景计算，其余人不变）
+  const pvLOS = useMemo(() => {
+    if (!pv || !previewSinger) return null;
+    const moved = { ...previewSinger, x: pv.x, y: pv.y };
+    const others = scene.singers.filter((s) => s.id !== previewSinger.id);
+    return { moved, los: analyzeSinger(scene.conductor, moved, [moved, ...others]) };
+  }, [pv, previewSinger, scene]);
+
   return (
     <svg
       ref={svgRef}
@@ -142,8 +168,8 @@ export function Stage(props: StageProps) {
       onPointerLeave={onPointerUp}
       onPointerDown={() => props.onSelect(null)}
       onDoubleClick={(e) => {
-        // 双击空白处才添加；落在站位圆/指挥上时忽略
-        if ((e.target as Element).closest?.('[data-singer-id], .conductor')) return;
+        // 双击空白处才添加；落在站位圆/指挥/候选标记上时忽略
+        if ((e.target as Element).closest?.('[data-singer-id], .conductor, .cand-marker, .preview')) return;
         const p = toSceneCoords(e.clientX, e.clientY);
         const c = clampSinger(p.x, p.y);
         props.onAddSingerAt(Number(c.x.toFixed(2)), Number(c.y.toFixed(2)));
@@ -191,6 +217,55 @@ export function Stage(props: StageProps) {
           </g>
         );
       })}
+
+      {/* 自动解遮挡：候选位置标记（小圆点 + 排名，点击在舞台上直接切换预览） */}
+      {pv &&
+        pv.candidates.map((c, i) => (
+          <g
+            key={`cand-${i}`}
+            className={`cand-marker ${i === pv.previewIndex ? 'active' : ''}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onPreviewCandidate(i === pv.previewIndex ? null : i);
+            }}
+          >
+            <circle cx={c.x} cy={c.y} r={0.14} className="cand-dot" />
+            <text x={c.x} y={c.y} textAnchor="middle" dominantBaseline="central" className="cand-num">
+              {i + 1}
+            </text>
+          </g>
+        ))}
+
+      {/* 自动解遮挡预览：位移虚线、临时站位圆与预览视线（不写入场景） */}
+      {pv && previewSinger && pvLOS && (
+        <g className="preview">
+          <line
+            x1={previewSinger.x}
+            y1={previewSinger.y}
+            x2={pv.x}
+            y2={pv.y}
+            className="preview-move"
+          />
+          <line
+            x1={pv.x}
+            y1={pv.y}
+            x2={conductor.x}
+            y2={conductor.y}
+            className={
+              pvLOS.los.status === 'clear'
+                ? 'los los-clear preview-los'
+                : pvLOS.los.status === 'tangent'
+                  ? 'los los-tangent preview-los'
+                  : 'los los-blocked preview-los'
+            }
+          />
+          <circle cx={pv.x} cy={pv.y} r={previewSinger.radius} className="preview-body" />
+          <text x={pv.x} y={pv.y} textAnchor="middle" dominantBaseline="central" className="preview-label">
+            {previewSinger.name}
+          </text>
+        </g>
+      )}
 
       {/* 指挥 */}
       <g

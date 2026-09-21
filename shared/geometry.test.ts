@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {
   analyzeScene,
   analyzeSinger,
+  evaluateUnblockPosition,
+  findUnblockCandidates,
+  stageInterior,
   validateScene,
   TANGENT_EPS,
   type Scene,
@@ -149,4 +152,152 @@ test('validateScene：拒绝非法输入并给出错误', () => {
   });
   assert.equal(bad.ok, false);
   if (!bad.ok) assert.ok(bad.errors.length >= 3);
+});
+
+// ---------------------------------------------------------------------------
+// 自动解遮挡：网格采样 + 细化
+// ---------------------------------------------------------------------------
+
+test('stageInterior：圆心范围保证整圆留在舞台内', () => {
+  const b = stageInterior({ width: 10, depth: 6 }, 0.3);
+  assert.deepEqual(b, { minX: 0.3, maxX: 9.7, minY: 0.3, maxY: 5.7 });
+});
+
+test('自动解遮挡：共线被挡 → 最小位移候选可行、按距离升序且不修改场景', () => {
+  const me = singer('me', 0, 4, 0.3);
+  const blocker = singer('b', 0, 2, 0.3);
+  const sc = scene({
+    stage: { width: 12, depth: 8 },
+    conductor: { x: 0, y: 0 },
+    singers: [me, blocker],
+  });
+  const snapshot = JSON.stringify(sc);
+  const r = findUnblockCandidates(sc, 'me');
+
+  assert.equal(r.error, undefined);
+  assert.equal(r.alreadyClear, false);
+  assert.ok(r.candidates.length >= 1, '应至少找到一个可行候选');
+  assert.ok(r.candidates.length <= 3);
+  assert.ok(r.sampledCount > 100, '应对舞台网格采样');
+  assert.ok(r.feasibleCount > 0);
+
+  // 每个候选都必须同时满足全部三条约束
+  for (const c of r.candidates) {
+    const f = evaluateUnblockPosition(sc, 'me', { x: c.x, y: c.y });
+    assert.equal(f.feasible, true, `候选 (${c.x},${c.y}) 应可行：${f.violations.map((v) => v.message).join('；')}`);
+    // 留在舞台内（整圆）
+    assert.ok(c.x >= 0.3 - 1e-9 && c.x <= 11.7 + 1e-9 && c.y >= 0.3 - 1e-9 && c.y <= 7.7 + 1e-9);
+    // 与遮挡者间距 ≥ 两半径之和
+    assert.ok(Math.hypot(c.x - blocker.x, c.y - blocker.y) >= 0.6 - TANGENT_EPS);
+    // 视线不再被挡
+    const moved: Singer = { ...me, x: c.x, y: c.y };
+    const los = analyzeSinger(sc.conductor, moved, [moved, blocker]);
+    assert.notEqual(los.status, 'blocked');
+  }
+
+  // 按位移距离升序
+  const dists = r.candidates.map((c) => c.distance);
+  for (let i = 1; i < dists.length; i++) assert.ok(dists[i] >= dists[i - 1] - 1e-9);
+
+  // 最接近的候选应该是“侧向移出视线”：位移 ≈ 0.6（移动一个半径），不超过 ~0.75
+  assert.ok(r.candidates[0].distance < 0.75, `首候选位移 ${r.candidates[0].distance} 应接近 0.6`);
+
+  // 纯函数：场景未被修改
+  assert.equal(JSON.stringify(sc), snapshot);
+});
+
+test('自动解遮挡：当前位置已通畅 → alreadyClear 且首候选位移为 0', () => {
+  const me = singer('me', 4, 4, 0.3);
+  const other = singer('b', -3, 2, 0.3); // 完全不相关的位置
+  const sc = scene({ conductor: { x: 0, y: 0 }, singers: [me, other] });
+  const r = findUnblockCandidates(sc, 'me');
+  assert.equal(r.error, undefined);
+  assert.equal(r.alreadyClear, true);
+  assert.ok(r.candidates.length >= 1);
+  assert.ok(r.candidates[0].distance <= 1e-6);
+  const f = evaluateUnblockPosition(sc, 'me', { x: me.x, y: me.y });
+  assert.equal(f.feasible, true);
+});
+
+test('自动解遮挡：候选去重（细化收敛点不重复出现）', () => {
+  const me = singer('me', 0, 4, 0.3);
+  const blocker = singer('b', 0, 2, 0.3);
+  const sc = scene({ stage: { width: 12, depth: 8 }, conductor: { x: 0, y: 0 }, singers: [me, blocker] });
+  const r = findUnblockCandidates(sc, 'me');
+  const keys = r.candidates.map((c) => `${c.x.toFixed(3)}|${c.y.toFixed(3)}`);
+  assert.equal(new Set(keys).size, keys.length);
+});
+
+test('自动解遮挡：站位被密阵铺满窄台 → 无可行候选并给出不可行原因', () => {
+  // 舞台 2×2，9 名演唱者按 0.6m 间距铺满内部（含四角），任一点都距某人 <0.6m
+  const me = singer('me', 1, 1, 0.3);
+  const grid = [0.3, 0.9, 1.5];
+  const ring: Singer[] = [];
+  for (const gx of grid) for (const gy of grid) ring.push(singer(`b${gx}-${gy}`, gx, gy, 0.3));
+  const sc = scene({ stage: { width: 2, depth: 2 }, conductor: { x: 1, y: 0 }, singers: [me, ...ring] });
+  const r = findUnblockCandidates(sc, 'me');
+  assert.equal(r.error, undefined);
+  assert.equal(r.candidates.length, 0, '不应找到可行候选');
+  assert.ok(r.infeasibleSamples.length > 0, '应给出不可行采样点');
+  for (const s of r.infeasibleSamples) {
+    assert.ok(s.violations.length > 0);
+    assert.ok(
+      s.violations.some((v) => v.type === 'spacing' || v.type === 'sightline' || v.type === 'stage'),
+    );
+  }
+  // 纯搜索：场景中的演唱者数量与位置不变
+  assert.equal(sc.singers.length, 10);
+});
+
+test('自动解遮挡：间距约束 —— 重叠候选报 spacing 并带对方 id', () => {
+  const me = singer('me', 5, 5, 0.3);
+  const other = singer('o', 5.2, 5, 0.3); // 距 0.2 < 0.6
+  const sc = scene({ stage: { width: 10, depth: 8 }, conductor: { x: 5, y: 0 }, singers: [me, other] });
+  const f = evaluateUnblockPosition(sc, 'me', { x: 5.2, y: 5 });
+  assert.equal(f.feasible, false);
+  const spacing = f.violations.find((v) => v.type === 'spacing');
+  assert.ok(spacing, '应报告间距违规');
+  assert.equal(spacing!.otherId, 'o');
+});
+
+test('自动解遮挡：舞台边界 —— 圆出界报 stage 违规', () => {
+  const me = singer('me', 5, 5, 0.3);
+  const sc = scene({ stage: { width: 10, depth: 8 }, conductor: { x: 5, y: 0 }, singers: [me] });
+  const f = evaluateUnblockPosition(sc, 'me', { x: 0.1, y: 5 }); // 圆左侧出界
+  assert.equal(f.feasible, false);
+  assert.ok(f.violations.some((v) => v.type === 'stage'));
+});
+
+test('自动解遮挡：视线恰好相切于对方圆（擦边）视为可行', () => {
+  // 视线为 x=2 的竖直线；对方圆心 (2.5, 1) r=0.5 → 圆心距视线 0.5 = 半径，恰好相切；
+  // 同时与被移动者相距 3.04 m，满足间距约束
+  const me = singer('me', 2, 4, 0.3);
+  const other = singer('o', 2.5, 1, 0.5);
+  const sc = scene({ stage: { width: 12, depth: 8 }, conductor: { x: 2, y: 0 }, singers: [me, other] });
+  const f = evaluateUnblockPosition(sc, 'me', { x: 2, y: 4 });
+  assert.equal(f.feasible, true, f.violations.map((v) => v.message).join('；'));
+  assert.equal(analyzeSinger(sc.conductor, me, [me, other]).status, 'tangent');
+});
+
+test('自动解遮挡：移到与指挥重合 → degenerate 违规', () => {
+  const me = singer('me', 5, 5, 0.3);
+  const sc = scene({ stage: { width: 12, depth: 8 }, conductor: { x: 5, y: 0.5 }, singers: [me] });
+  const f = evaluateUnblockPosition(sc, 'me', { x: 5, y: 0.5 });
+  assert.equal(f.feasible, false);
+  assert.ok(f.violations.some((v) => v.type === 'degenerate'));
+});
+
+test('自动解遮挡：舞台放不下站位圆 → error 明确提示', () => {
+  const me = singer('me', 1, 1, 2); // 直径 4 > 舞台 2×2
+  const sc = scene({ stage: { width: 2, depth: 2 }, conductor: { x: 1, y: 0 }, singers: [me] });
+  const r = findUnblockCandidates(sc, 'me');
+  assert.equal(r.candidates.length, 0);
+  assert.ok(r.error && r.error.includes('舞台空间不足'));
+});
+
+test('自动解遮挡：未知演唱者 id → error', () => {
+  const sc = scene({ conductor: { x: 0, y: 0 }, singers: [singer('a', 1, 1)] });
+  const r = findUnblockCandidates(sc, 'nope');
+  assert.equal(r.candidates.length, 0);
+  assert.ok(r.error && r.error.includes('未找到'));
 });

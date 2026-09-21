@@ -493,6 +493,259 @@ button.danger:hover {
   background: var(--degenerate);
 }
 
+/* ---- 自动解遮挡 ---- */
+.unblock {
+  border-color: #2b4a7a;
+}
+
+.unblock-rule {
+  line-height: 1.5;
+}
+
+button.unblock-search {
+  width: 100%;
+  background: #1d3a66;
+  border-color: #2f5ea0;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+button.unblock-search:hover {
+  border-color: var(--accent);
+  background: #244a80;
+}
+
+.unblock-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0;
+}
+
+.unblock-stale {
+  font-size: 12px;
+  color: var(--tangent);
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: 5px;
+  padding: 5px 8px;
+  margin: 6px 0 0;
+}
+
+.unblock-empty {
+  font-size: 12px;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: 5px;
+  line-height: 1.5;
+}
+
+.unblock-empty.ok {
+  color: var(--clear);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.unblock-empty.error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.candidate-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.candidate-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #1d2536;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.candidate-list li:hover {
+  background: #232e47;
+}
+
+.candidate-list li.selected {
+  border-color: var(--accent);
+  background: #20314f;
+}
+
+.cand-rank {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  background: #475569;
+}
+
+.cand-rank.rank-1 {
+  background: #d4a017;
+}
+
+.cand-rank.rank-2 {
+  background: #7a8aa0;
+}
+
+.cand-rank.rank-3 {
+  background: #9a6a3a;
+}
+
+.cand-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cand-apply {
+  padding: 3px 10px;
+  font-size: 12px;
+  background: #14532d;
+  border-color: #1e7a44;
+}
+
+.preview-bar {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0 4px;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.infeasible {
+  margin-top: 8px;
+  border-top: 1px dashed var(--panel-border);
+  padding-top: 6px;
+}
+
+.infeasible h4 {
+  margin: 0 0 5px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.infeasible ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.infeasible li {
+  background: #1a2031;
+  border-radius: 5px;
+  padding: 5px 7px;
+  font-size: 11.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.infeas-pos {
+  color: var(--muted);
+}
+
+.violation {
+  line-height: 1.4;
+  padding-left: 10px;
+  position: relative;
+}
+
+.violation::before {
+  content: '•';
+  position: absolute;
+  left: 2px;
+}
+
+.violation.v-stage {
+  color: #f0abfc;
+}
+
+.violation.v-spacing {
+  color: #fdba74;
+}
+
+.violation.v-sightline {
+  color: #fca5a5;
+}
+
+.violation.v-degenerate {
+  color: #cbd5e1;
+}
+
+/* 舞台上的候选标记与预览 */
+.cand-marker {
+  cursor: pointer;
+}
+
+.cand-dot {
+  fill: rgba(79, 140, 255, 0.25);
+  stroke: var(--accent);
+  stroke-width: 0.03;
+}
+
+.cand-marker.active .cand-dot {
+  fill: rgba(79, 140, 255, 0.7);
+  stroke: #fff;
+  stroke-width: 0.05;
+}
+
+.cand-num {
+  fill: #fff;
+  font-size: 0.18px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.preview-move {
+  stroke: var(--accent);
+  stroke-width: 0.03;
+  stroke-dasharray: 0.12 0.08;
+  opacity: 0.9;
+}
+
+.preview-los {
+  stroke-width: 0.03;
+  opacity: 0.6;
+}
+
+.preview-body {
+  fill: rgba(79, 140, 255, 0.18);
+  stroke: var(--accent);
+  stroke-width: 0.04;
+  stroke-dasharray: 0.1 0.07;
+  pointer-events: none;
+}
+
+.preview-label {
+  fill: #9cc0ff;
+  font-size: 0.24px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 @media (max-width: 900px) {
   .main {
     flex-direction: column;

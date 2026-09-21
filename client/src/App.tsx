@@ -1,14 +1,17 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   analyzeScene,
+  findUnblockCandidates,
   serializeScene,
   validateScene,
   type Analysis,
   type Scene,
+  type UnblockCandidate,
 } from '../../shared/geometry';
 import { PRESETS, defaultScene } from './presets';
 import { Stage, CONDUCTOR_ID } from './Stage';
 import { Sidebar } from './Sidebar';
+import type { UnblockState } from './UnblockPanel';
 
 interface Notice {
   kind: 'info' | 'error' | 'success';
@@ -29,19 +32,30 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [checking, setChecking] = useState(false);
+  // 场景版本号：任何编辑都 +1，用于判定自动解遮挡搜索结果是否过期
+  const [sceneVersion, setSceneVersion] = useState(0);
+  const [unblock, setUnblock] = useState<UnblockState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const analysis: Analysis = useMemo(() => analyzeScene(scene), [scene]);
 
+  /** 使自动解遮挡结果过期（场景被编辑过，候选不再可信）。 */
+  const markSceneChanged = () => {
+    setSceneVersion((v) => v + 1);
+    setUnblock((u) => (u && u.status === 'done' ? { ...u, status: 'stale' } : u));
+  };
+
   // ---- 场景编辑 ----
-  const updateSingers = (fn: (s: Scene['singers']) => Scene['singers']) =>
+  const updateSingers = (fn: (s: Scene['singers']) => Scene['singers']) => {
     setScene((sc) => ({ ...sc, singers: fn(sc.singers) }));
+    markSceneChanged();
+  };
 
   const addSingerAt = (x: number, y: number) => {
     const n = nextSingerIndex(scene);
     const id = `s${Date.now().toString(36)}${n}`;
     updateSingers((list) => [...list, { id, name: `S${n}`, x, y, radius: 0.3 }]);
-    setSelectedId(id);
+    selectId(id);
   };
 
   const addSingerAuto = () => {
@@ -64,8 +78,10 @@ export default function App() {
   const moveSinger = (id: string, x: number, y: number) =>
     updateSingers((list) => list.map((s) => (s.id === id ? { ...s, x, y } : s)));
 
-  const moveConductor = (x: number, y: number) =>
+  const moveConductor = (x: number, y: number) => {
     setScene((sc) => ({ ...sc, conductor: { x, y } }));
+    markSceneChanged();
+  };
 
   const changeRadius = (id: string, radius: number) =>
     updateSingers((list) => list.map((s) => (s.id === id ? { ...s, radius } : s)));
@@ -76,6 +92,49 @@ export default function App() {
   const removeSinger = (id: string) => {
     updateSingers((list) => list.filter((s) => s.id !== id));
     setSelectedId((sel) => (sel === id ? null : sel));
+    setUnblock((u) => (u && u.singerId === id ? null : u));
+  };
+
+  // ---- 自动解遮挡（纯搜索，不修改场景；只有“应用”才移动该演唱者）----
+  const runUnblockSearch = () => {
+    if (!selectedId || selectedId === CONDUCTOR_ID) return;
+    const result = findUnblockCandidates(scene, selectedId);
+    setUnblock({
+      singerId: selectedId,
+      sceneVersion,
+      status: 'done',
+      result,
+      previewIndex: null,
+    });
+    if (result.error) {
+      setNotice({ kind: 'error', text: `自动解遮挡：${result.error}` });
+    } else if (result.candidates.length === 0 && !result.alreadyClear) {
+      setNotice({
+        kind: 'error',
+        text: `自动解遮挡：未找到可行方案（已采样 ${result.sampledCount} 个位置，只允许移动当前演唱者）。`,
+      });
+    } else {
+      setNotice({ kind: 'info', text: '自动解遮挡搜索完成，可点击候选预览后应用。' });
+    }
+  };
+
+  const previewUnblock = (index: number | null) =>
+    setUnblock((u) => (u ? { ...u, previewIndex: index } : u));
+
+  const applyUnblock = (candidate: UnblockCandidate) => {
+    if (!unblock) return;
+    moveSinger(unblock.singerId, candidate.x, candidate.y);
+    setUnblock(null);
+    setNotice({
+      kind: 'success',
+      text: `已应用解遮挡位置（位移 ${candidate.distance.toFixed(2)} m），遮挡统计已实时刷新。`,
+    });
+  };
+
+  const selectId = (id: string | null) => {
+    setSelectedId(id);
+    // 切换选中对象时收起自动解遮挡面板的预览/结果（结果只对搜索时的演唱者有意义）
+    setUnblock((u) => (u && u.singerId !== id ? null : u));
   };
 
   const loadPreset = (key: string) => {
@@ -83,6 +142,8 @@ export default function App() {
     if (!preset) return;
     setScene(preset.build());
     setSelectedId(null);
+    setUnblock(null);
+    markSceneChanged();
     setNotice({ kind: 'info', text: `已载入预设：${preset.label}` });
   };
 
@@ -109,6 +170,8 @@ export default function App() {
       }
       setScene(v.scene);
       setSelectedId(null);
+      setUnblock(null);
+      markSceneChanged();
       setNotice({ kind: 'success', text: `导入成功：${v.scene.singers.length} 名演唱者。` });
     } catch (err) {
       setNotice({ kind: 'error', text: `导入失败：${err instanceof Error ? err.message : String(err)}` });
@@ -150,6 +213,22 @@ export default function App() {
       setChecking(false);
     }
   };
+
+  // 预览覆盖：仅渲染用，不改变场景（统计仍按真实场景计算）
+  const previewCandidate =
+    unblock && unblock.status === 'done' && unblock.previewIndex !== null
+      ? (unblock.result?.candidates[unblock.previewIndex] ?? null)
+      : null;
+  const preview =
+    previewCandidate && unblock
+      ? {
+          singerId: unblock.singerId,
+          x: previewCandidate.x,
+          y: previewCandidate.y,
+          candidates: unblock.status === 'done' ? (unblock.result?.candidates ?? []) : [],
+          previewIndex: unblock.previewIndex ?? 0,
+        }
+      : null;
 
   return (
     <div className="app">
@@ -199,11 +278,13 @@ export default function App() {
             scene={scene}
             analysis={analysis}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            preview={preview}
+            onSelect={selectId}
             onMoveSinger={moveSinger}
             onMoveConductor={moveConductor}
             onAddSingerAt={addSingerAt}
             onRadiusChange={changeRadius}
+            onPreviewCandidate={previewUnblock}
           />
           {selectedId === CONDUCTOR_ID && (
             <div className="conductor-hint">已选中指挥：拖动调整位置，点击空白处取消选择。</div>
@@ -213,10 +294,14 @@ export default function App() {
           scene={scene}
           analysis={analysis}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={selectId}
           onRadiusChange={changeRadius}
           onRename={rename}
           onRemove={removeSinger}
+          unblock={unblock}
+          onUnblockSearch={runUnblockSearch}
+          onUnblockPreview={previewUnblock}
+          onUnblockApply={applyUnblock}
         />
       </main>
     </div>

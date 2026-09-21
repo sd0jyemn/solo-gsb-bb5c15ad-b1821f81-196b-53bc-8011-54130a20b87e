@@ -1,6 +1,7 @@
-import type { Analysis, Scene, SingerLOS } from '../../shared/geometry';
+import type { Analysis, Scene, SingerLOS, UnblockCandidate } from '../../shared/geometry';
 import { identityColor } from './colors';
 import { CONDUCTOR_ID } from './Stage';
+import { UnblockPanel, type UnblockState } from './UnblockPanel';
 
 interface SidebarProps {
   scene: Scene;
@@ -10,6 +11,10 @@ interface SidebarProps {
   onRadiusChange: (id: string, radius: number) => void;
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
+  unblock: UnblockState | null;
+  onUnblockSearch: () => void;
+  onUnblockPreview: (index: number | null) => void;
+  onUnblockApply: (candidate: UnblockCandidate) => void;
 }
 
 const STATUS_LABEL: Record<SingerLOS['status'], string> = {
@@ -101,6 +106,17 @@ export function Sidebar(props: SidebarProps) {
           <p className="hint">点击舞台上的站位圆或指挥进行选择；拖动可移动，滚轮可调整半径。</p>
         )}
       </section>
+
+      {selectedSinger && (
+        <UnblockPanel
+          scene={scene}
+          selectedSingerId={selectedSinger.id}
+          state={props.unblock}
+          onSearch={props.onUnblockSearch}
+          onPreview={props.onUnblockPreview}
+          onApply={props.onUnblockApply}
+        />
+      )}
 
       <section className="panel">
         <h3>演唱者（{scene.singers.length}）</h3>
